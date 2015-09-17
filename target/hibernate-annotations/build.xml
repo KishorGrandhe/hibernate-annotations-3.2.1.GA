@@ -1,0 +1,188 @@
+<!--
+
+  Hibernate Annotations ANT build script.
+
+  You need JDK 5.0 installed to build Hibernate Annotations.
+
+-->
+
+<project name="HibernateAnnotations" default="dist" basedir=".">
+
+    <!-- Give user a chance to override without editing this file
+       (and without typing -D each time it compiles it) -->
+    <property file="build.properties"/>
+    <property file="${user.home}/.ant.properties"/>
+	
+    <!-- Name of project and version, used to create filenames -->
+    <property name="Name" value="Hibernate Annotations"/>
+    <property name="name" value="hibernate-annotations"/>
+    <property name="version" value="3.2.1.GA"/>
+    <property name="javadoc.packagenames" value="org.hibernate.*"/>
+	<property name="jdbc.dir" value="jdbc"/>
+    <property name="copy.test" value="true"/>
+    <property name="common.dir" value="../common"/>
+	
+    <available property="jpa-present" file="${basedir}/../ejb-api" type="dir"/>
+    <import file="${common.dir}/common-build.xml"/>
+	<property name="jpa-javadoc.dir" value="${dist.doc.dir}/ejb-api"/>
+	
+    <target name="compile" depends="init" description="Compile the Java source code">
+		<available
+			classname="org.eclipse.core.launcher.Main"
+			property="build.compiler"
+			value="org.eclipse.jdt.core.JDTCompilerAdapter"
+			classpath="${java.class.path}"/>
+		<javac
+            srcdir="${src.dir}"
+			destdir="${classes.dir}"
+			classpathref="lib.class.path"
+			debug="${javac.debug}"
+			optimize="${javac.optimize}"
+			nowarn="on"
+            source="1.5">
+			<src path="${src.dir}"/>
+		</javac>
+        <copy todir="${classes.dir}">
+            <fileset dir="${src.dir}">
+                <include name="**/resources/*.properties"/>
+                <include name="**/*.xsd"/>
+            </fileset>
+        </copy>
+    </target>
+	
+	<target name="compiletest" depends="compile" description="Compile the tests">
+        <available
+            classname="org.eclipse.core.launcher.Main"
+            property="build.compiler"
+            value="org.eclipse.jdt.core.JDTCompilerAdapter"
+            classpath="${java.class.path}"/>
+        <javac
+            destdir="${testclasses.dir}"
+            classpathref="junit.classpath"
+            debug="${javac.debug}"
+            optimize="${javac.optimize}"
+            nowarn="on"
+            source="1.5"
+            target="1.5">
+            <src refid="testsrc.path"/>
+        </javac>
+    </target>
+
+    <path id="junit.moduleclasspath">
+    	   <pathelement location="${src.dir}"/>
+           <pathelement location="${test.dir}"/>
+           <pathelement location="lib/testlibs/org.eclipse.jdt.core_3.1.0.jar"/>
+           <fileset dir="${jdbc.dir}">
+		       <include name="**/*.jar"/>
+			   <include name="**/*.zip"/>
+           </fileset>
+    </path>
+
+    <!-- target name="junit" depends="compiletest">
+        <mkdir dir="test_output"/>
+        <junit fork="yes" printsummary="yes" haltonfailure="yes"
+             forkmode="perBatch">
+            <classpath>
+                <fileset dir="${jdbc.dir}">
+                    <include name="**/*.jar"/>
+                    <include name="**/*.zip"/>
+                </fileset>
+                <path refid="lib.class.path"/>
+                <pathelement path="${classes.dir}"/>
+                <pathelement path="${src.dir}"/>
+                <pathelement path="${test.dir}"/>
+            </classpath>
+            <formatter type="plain"/>
+            <formatter type="xml"/>
+            <batchtest fork="yes" todir="test_output" haltonfailure="no">
+                <fileset dir="${classes.dir}">
+                    <include name="**/*Test.class"/>
+                </fileset>
+            </batchtest>
+        </junit>
+    </target -->
+    
+    <!-- Run a single unit test. -->
+	<target name="junitsingle" depends="compiletest" description="Run a single test suite (requires testname and jdbc.driver properties)">
+		<mkdir dir="test_output"/>
+		<junit printsummary="yes" fork="yes" haltonfailure="yes">
+			<classpath>
+				<fileset dir="${jdbc.dir}">
+					<include name="**/*.jar"/>
+					<include name="**/*.zip"/>
+				</fileset>
+            	<path refid="lib.class.path"/>
+				<pathelement path="${classes.dir}"/>
+				<pathelement path="${src.dir}"/> <!-- pick up properties from here -->
+				<pathelement path="${test.dir}"/> <!-- pick up mappings from here -->
+			</classpath>
+			<formatter type="plain"/>
+			<formatter type="xml"/>
+			<test fork="yes" todir="test_output" haltonfailure="no" name="${testname}"/>
+		</junit>
+	</target>
+
+    <!-- target name="report">
+        <mkdir dir="test_output"/>
+        <junitreport todir="test_output">
+          <fileset dir="test_output">
+            <include name="TEST-*.xml"/>
+          </fileset>
+          <report format="frames" todir="test_output/report"/>
+        </junitreport>
+    </target -->
+
+    <target name="jar" depends="compile" description="Build the distribution .jar file">
+        <mkdir dir="${classes.dir}/META-INF"/>
+        <manifest file="${classes.dir}/META-INF/MANIFEST.MF">
+            <attribute name="Product" value="${Name}"/>
+            <attribute name="Version" value="${version}"/>
+        </manifest>
+        <antcall target="common-build.jar"/>
+    </target>
+
+    <!-- target name="javadoc" description="Compile the Javadoc API documentation to dist dir">
+			<echo>Skipping java doc since ant's javadoc task cannot handle an alternative javadoc</echo>        	
+     </target -->
+	
+	<target name="jpa-javadoc" if="jpa-present">
+		 <mkdir dir="${jpa-javadoc.dir}"/>
+		 <ant dir="../ejb-api" target="javadoc" inheritAll="false"/>
+		 <copy todir="${jpa-javadoc.dir}">
+		     <fileset dir="${basedir}/../ejb-api/build/api">
+			     <include name="**/*.*"/>
+			 </fileset>
+		 </copy>
+	</target>
+
+    <!-- Some of this can probably be moved to common-build... -->
+    <target name="dist" depends="jar,javadoc,jpa-javadoc,copysource,copytest,copylib,extras" description="Build everything">
+
+        <ant inheritall="false" dir="${basedir}/doc/reference"/>
+        <copy todir="${dist.dir}/doc/reference" failonerror="false">
+            <fileset dir="${basedir}/doc/reference/build">
+                <include name="**/*.*"/>
+            </fileset>
+        </copy>
+
+        <copy todir="${dist.dir}" failonerror="false">
+            <fileset dir="${common.dir}">
+                <include name="common-build.xml"/>
+            </fileset>
+        </copy>
+        <copy file="${basedir}/build.properties.dist" tofile="${dist.dir}/build.properties" failonerror="false">
+        </copy>
+        <antcall target="common-build.dist"/>
+    </target>
+
+    <target name="zip-dist"  description="zip the dist">
+		<zip zipfile = "${dist.dir}-${version}.zip">
+			<zipfileset prefix="${name}-${version}" dir="${dist.dir}"/>
+		</zip>
+		<tar compression="gzip" tarfile="${dist.dir}-${version}.tar.gz">
+			<tarfileset prefix="${name}-${version}" dir="${dist.dir}"/>
+		</tar>
+	</target>
+
+
+</project>

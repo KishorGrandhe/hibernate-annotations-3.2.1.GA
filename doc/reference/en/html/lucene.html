@@ -1,0 +1,398 @@
+<html><head>
+      <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+   <title>Chapter&nbsp;5.&nbsp;Hibernate Search: Apache Lucene
+  Integration</title><link rel="stylesheet" href="../shared/css/html.css" type="text/css"><meta name="generator" content="DocBook XSL Stylesheets V1.65.1"><link rel="home" href="index.html" title="Hibernate Annotations"><link rel="up" href="index.html" title="Hibernate Annotations"><link rel="previous" href="validator.html" title="Chapter&nbsp;4.&nbsp;Hibernate Validator"></head><body bgcolor="white" text="black" link="#0000FF" vlink="#840084" alink="#0000FF"><div class="navheader"><table width="100%" summary="Navigation header"><tr><th colspan="3" align="center">Chapter&nbsp;5.&nbsp;Hibernate Search: Apache Lucene
+  Integration</th></tr><tr><td width="20%" align="left"><a accesskey="p" href="validator.html">Prev</a>&nbsp;</td><th width="60%" align="center">&nbsp;</th><td width="20%" align="right">&nbsp;</td></tr></table><hr></div><div class="chapter" lang="en"><div class="titlepage"><div><div><h2 class="title"><a name="lucene"></a>Chapter&nbsp;5.&nbsp;Hibernate Search: Apache <span class="trademark">Lucene</span>&#8482;
+  Integration</h2></div></div><div></div></div><p><a href="http://lucene.apache.org" target="_top">Apache Lucene</a> is a
+  high-performance Java search engine library available at the Apache Software
+  Foundation. Hibernate Annotations includes a package of annotations that
+  allows you to mark any domain model object as indexable and have Hibernate
+  maintain a Lucene index of any instances persisted via Hibernate. Apache
+  Lucene is also integrated with the Hibernate query facility.</p><p>Hibernate Search is a work in progress and new features are cooking in
+  this area. So expect some compatibility changes in subsequent
+  versions.</p><div class="section" lang="en"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="lucene-architecture"></a>5.1.&nbsp;Architecture</h2></div></div><div></div></div><p>Hibernate Search is made of an indexing engine and an index search
+    engine. Both are backed by Apache Lucene.</p><p>When an entity is inserted, updated or removed to/from the database,
+    <span class="productname">Hibernate Search</span>&#8482; will keep track of this event
+    (through the Hibernate event system) and schedule an index update. When
+    out of transaction, the update is executed right after the actual database
+    operation. It is however recommended, for both your database and Hibernate
+    Search, to execute your operation in a transaction (whether JDBC or JTA).
+    When in a transaction, the index update is schedule for the transaction
+    commit (and discarded in case of transaction rollback). You can think of
+    this as the regular (infamous) autocommit vs transactional behavior. From
+    a performance perspective, the <span class="emphasis"><em>in transaction</em></span> mode is
+    recommended. All the index updates are handled for you without you having
+    to use the Apache Lucene APIs.</p><p>To interact with Apache Lucene indexes, Hibernate Search has the
+    notion of <tt class="classname">DirectoryProvider</tt>. A directory provider
+    will manage a given Lucene <tt class="classname">Directory</tt> type. You can
+    configure directory providers to adjust the directory target.</p><p><span class="productname">Hibernate Search</span>&#8482; can also use a Lucene
+    index to search an entity and return a (list of) managed entity saving you
+    from the tedious Object / Lucene Document mapping and low level Lucene
+    APIs. The application code use the unified
+    <tt class="classname">org.hibernate.Query</tt> API exactly the way a HQL or
+    native query would be done.</p></div><div class="section" lang="en"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="lucene-configuration"></a>5.2.&nbsp;Configuration</h2></div></div><div></div></div><div class="section" lang="en"><div class="titlepage"><div><div><h3 class="title"><a name="lucene-configuration-directory"></a>5.2.1.&nbsp;Directory configuration</h3></div></div><div></div></div><p>Apache Lucene has a notion of Directory where the index is stored.
+      The Directory implementation can be customized but Lucene comes bundled
+      with a file system and a full memory implementation.
+      <span class="productname">Hibernate Search</span>&#8482; has the notion of
+      <tt class="literal">DirectoryProvider</tt> that handle the configuration and
+      the initialization of the Lucene Directory.</p><div class="table"><a name="d0e3540"></a><p class="title"><b>Table&nbsp;5.1.&nbsp;List of built-in Directory Providers</b></p><table summary="List of built-in Directory Providers" border="1"><colgroup><col><col><col></colgroup><thead><tr><th align="center">Class</th><th align="center">description</th><th align="center">Properties</th></tr></thead><tbody><tr><td>org.hibernate.search.store.FSDirectoryProvider</td><td>File system based directory. The directory used will be
+              &lt;indexBase&gt;/&lt;<tt class="literal">@Indexed.name</tt>&gt;</td><td><tt class="literal">indexBase</tt>: Base directory</td></tr><tr><td>org.hibernate.search.store.RAMDirectoryProvider</td><td>Memory based directory, the directory will be uniquely
+              indentified by the <tt class="literal">@Indexed.name</tt>
+              element</td><td>none</td></tr></tbody></table></div><p>If the built-in directory providers does not fit your needs, you
+      can write your own directory provider by implementing the
+      <tt class="classname">org.hibernate.store.DirectoryProvider</tt>
+      interface</p><p>Each indexed entity is associated to a Lucene index (an index can
+      be shared by several entities but this is not usually the case). You can
+      configure the index through properties prefixed by
+      <tt class="constant">hibernate.search.</tt><i class="replaceable"><tt>indexname</tt></i>.
+      Default properties inherited to all indexes can be defined using the
+      prefix <tt class="constant">hibernate.search.default.</tt></p><p>To define the directory provider of a given index, you use the
+      <tt class="constant">hibernate.search.<i class="replaceable"><tt>indexname</tt></i>.directory_provider</tt></p><pre class="programlisting">hibernate.search.default.directory_provider org.hibernate.search.store.FSDirectoryProvider
+hibernate.search.default.indexDir=/usr/lucene/indexes
+
+hibernate.search.Rules.directory_provider org.hibernate.search.store.RAMDirectoryProvider
+</pre><p>applied on</p><pre class="programlisting">@Indexed(name="Status")
+public class Status { ... }
+
+@Indexed(name="Rules")
+public class Rule { ... }</pre><p>will create a file system directory in
+      <tt class="filename">/usr/lucene/indexes/Status</tt> where the Status
+      entities will be indexed, and use an in memory directory named
+      <tt class="literal">Rules</tt> where Rule entities will be indexed.</p><p>So you can easily defined common rules like the directory provider
+      and base directory, and overide those default later on on a per index
+      basis.</p><p>Writing your own <tt class="classname">DirectoryProvider</tt>, you can
+      benefit this configuration mechanism too.</p></div><div class="section" lang="en"><div class="titlepage"><div><div><h3 class="title"><a name="lucene-configuration-event"></a>5.2.2.&nbsp;Enabling automatic indexing</h3></div></div><div></div></div><p>Finally, we enable the <tt class="literal">SearchEventListener</tt> for
+      the three Hibernate events that occur after changes are executed to the
+      database.</p><pre class="programlisting">&lt;hibernate-configuration&gt;
+    ...
+    &lt;event type="post-update" 
+        &lt;listener class="org.hibernate.search.event.FullTextIndexEventListener"/&gt;
+    &lt;/event&gt;
+    &lt;event type="post-insert" 
+        &lt;listener class="org.hibernate.search.event.FullTextIndexEventListener"/&gt;
+    &lt;/event&gt;
+    &lt;event type="post-delete" 
+        &lt;listener class="org.hibernate.search.event.FullTextIndexEventListener"/&gt;
+    &lt;/event&gt;
+&lt;/hibernate-configuration&gt;</pre></div></div><div class="section" lang="en"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="lucene-mapping"></a>5.3.&nbsp;Mapping entities to the index structure</h2></div></div><div></div></div><p>All the metadata information related to indexed entities is
+    described through some Java annotations. There is no need for xml mapping
+    files nor a list of indexed entities. The list is discovered at startup
+    time scanning the Hibernate mapped entities.</p><p>First, we must declare a persistent class as indexable. This is done
+    by annotating the class with <tt class="literal">@Indexed</tt> (all entities not
+    annotated with <tt class="literal">@Indexed</tt> will be ignored by the indexing
+    process):</p><pre class="programlisting">@Entity
+<span class="bold"><b>@Indexed(index="indexes/essays")</b></span>
+public class Essay {
+    ...
+}</pre><p>The <tt class="literal">index</tt> attribute tells Hibernate what the
+    Lucene directory name is (usually a directory on your file system). If you
+    wish to define a base directory for all Lucene indexes, you can use the
+    <tt class="literal">hibernate.search.default.indexDir</tt> property in your
+    configuration file. Each entity instance will be represented by a Lucene
+    <tt class="classname">Document</tt> inside the given index (aka
+    Directory).</p><p>For each property (or attribute) of your entity, you have the
+    ability to describe how it will be indexed. The default (ie no annotation)
+    means that the property is completly ignored by the indexing process.
+    <tt class="literal">@Field</tt> does declare a property as indexed. When
+    indexing an element to a Lucene document you can specify how it is
+    indexed:</p><div class="itemizedlist"><ul type="disc"><li><p><tt class="literal">name</tt>: describe under which name, the property
+        should be stored in the Lucene Document. The default value is the
+        property name (following the JavaBeans convention)</p></li><li><p><tt class="literal">store</tt>: describe whether or not the property
+        is stored in the Lucene index. You can store the value
+        <tt class="literal">Store.YES</tt> (comsuming more space in the index),
+        store it in a compressed way <tt class="literal">Store.COMPRESS</tt> (this
+        does consume more CPU), or avoid any storage
+        <tt class="literal">Store.NO</tt> (this is the default value). When a
+        property is stored, you can retrieve it from the Lucene Document (note
+        that this is not related to whether the element is indexed or
+        not).</p></li><li><p>index: describe how the element is indexed (ie the process used
+        to index the property and the type of information store). The
+        different values are <tt class="literal">Index.NO</tt> (no indexing, ie
+        cannot be found by a query), <tt class="literal">Index.TOKENIZED</tt> (use
+        an analyzer to process the property),
+        <tt class="literal">Index.UN_TOKENISED</tt> (no analyzer pre processing),
+        <tt class="literal">Index.NO_NORM</tt> (do not store the normalization
+        data).</p></li></ul></div><p>These attributes are part of the <tt class="literal">@Field</tt>
+    annotation.</p><p>Whether or not you want to store the data depends on how you wish to
+    use the index query result. As of today, for a pure <span class="productname">Hibernate
+    Search</span>&#8482; usage, storing is not necessary. Whether or not you
+    want to tokenize a property or not depends on whether you wish to search
+    the element as is, or only normalized part of it. It make sense to
+    tokenize a text field, but it does not to do it for a date field (or an id
+    field).</p><p>Finally, the id property of an entity is a special property used by
+    <span class="productname">Hibernate Search</span>&#8482; to ensure index unicity of a
+    given entity. By design, an id has to be stored and must not be tokenized.
+    To mark a property as index id, use the <tt class="literal">@DocumentId</tt>
+    annotation.</p><pre class="programlisting">@Entity
+@Indexed(index="indexes/essays")
+public class Essay {
+    ...
+
+    @Id
+    <span class="bold"><b>@DocumentId</b></span>
+    public Long getId() { return id; }
+    
+    <span class="bold"><b>@Field(name="Abstract", index=Index.TOKENIZED, store=Store.YES)</b></span>
+    public String getSummary() { return summary; }
+    
+    @Lob
+    <span class="bold"><b>@Field(index=Index.TOKENIZED)</b></span>
+    public String getText() { return text; }
+    
+}</pre><p>These annotations define an index with three fields:
+    <tt class="literal">id</tt>, <tt class="literal">Abstract</tt> and
+    <tt class="literal">text</tt>. Note that by default the field name is
+    decapitalized, following the JavaBean specification.</p><p>Note: you <span class="emphasis"><em>must</em></span> specify
+    <tt class="literal">@DocumentId</tt> on the identifier property of your entity
+    class.</p><p>Lucene has the notion of <span class="emphasis"><em>boost factor</em></span>. It's a
+    way to give more weigth to a field or to an indexed element over an other
+    during the indexation process. You can use <tt class="literal">@Boost</tt> at
+    the field or the class level.</p><pre class="programlisting">@Entity
+@Indexed(index="indexes/essays")
+<span class="bold"><b>@Boost(2)</b></span>
+public class Essay {
+    ...
+
+    @Id
+    @DocumentId
+    public Long getId() { return id; }
+    
+    @Field(name="Abstract", index=Index.TOKENIZED, store=Store.YES)
+    <span class="bold"><b>@Boost(2.5f)</b></span>
+    public String getSummary() { return summary; }
+    
+    @Lob
+    @Field(index=Index.TOKENIZED)
+    public String getText() { return text; }
+    
+}</pre><p>In our example, Essay's probability to reach the top of the search
+    list will be multiplied by 2 and the summary field will be 2.5 more
+    important than the test field. Note that this explaination is actually
+    wrong, but it is simple and close enought to the reality. Please check the
+    Lucene documentation or the excellent <i class="citetitle">Lucene In
+    Action</i> from Otis Gospodnetic and Erik Hatcher.</p><p>The analyzer class used to index the elements is configurable
+    through the <tt class="literal">hibernate.search.analyzer</tt> property. If none
+    defined,
+    <tt class="classname">org.apache.lucene.analysis.standard.StandardAnalyzer</tt>
+    is used as the default.</p></div><div class="section" lang="en"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="lucene-bridge"></a>5.4.&nbsp;Property/Field Bridge</h2></div></div><div></div></div><p>All field of a full text index in Lucene have to be represented as
+    Strings. Ones Java properties have to be indexed in a String form. For
+    most of your properties, <span class="productname">Hibernate Search</span>&#8482; does
+    the translation job for you thanks to a built-in set of bridges. In some
+    cases, though you need a fine grain control over the translation
+    process.</p><div class="section" lang="en"><div class="titlepage"><div><div><h3 class="title"><a name="d0e3781"></a>5.4.1.&nbsp;Built-in bridges</h3></div></div><div></div></div><p><tt class="literal">Hibernate Search</tt> comes bundled with a set of
+      built-in bridges between a Java property type and its full text
+      representation.</p><p><tt class="literal">Null</tt> elements are not indexed (Lucene does not
+      support null elements and it does not make much sense either)</p><div class="variablelist"><dl><dt><span class="term">null</span></dt><dd><p>null elements are not indexed. Lucene does not support null
+            elements and this does not make much sense either.</p></dd><dt><span class="term">java.lang.String</span></dt><dd><p>String are indexed as is</p></dd><dt><span class="term">short, Short, integer, Integer, long, Long, float, Float,
+          double, Double, BigInteger, BigDecimal</span></dt><dd><p>Numbers are converted in their String representation. Note
+            that numbers cannot be compared by Lucene (ie used in ranged
+            queries) out of the box: they have to be padded <sup>[<a name="d0e3811" href="#ftn.d0e3811">1</a>]</sup></p></dd><dt><span class="term">java.util.Date</span></dt><dd><p>Dates are stored as yyyyMMddHHmmssSSS in GMT time
+            (200611072203012 for Nov 7th of 2006 4:03PM and 12ms EST). You
+            shouldn't really bother with the internal format. What is
+            important is that when using a DateRange Query, you should know
+            that the dates have to be expressed in GMT time.</p><p>Usually, storing the date up to the milisecond is not
+            necessary. <tt class="literal">@DateBridge</tt> defines the appropriate
+            resolution you are willing to store in the index
+            (<tt class="literal"><tt class="literal">@DateBridge(resolution=Resolution.DAY)</tt></tt>).
+            The date pattern will then be truncated accordingly.</p><pre class="programlisting">@Entity @Indexed 
+public class Meeting {
+    @Field(index=Index.UN_TOKENIZED)
+    <span class="bold"><b>@DateBridge(resolution=Resolution.MINUTE)</b></span>
+    private Date date;
+    ...
+}</pre><div class="warning" style="margin-left: 0.5in; margin-right: 0.5in;"><h3 class="title">Warning</h3><p>A Date whose resolution is lower than
+              <tt class="literal">MILLISECOND</tt> cannot be a
+              <tt class="literal">@DocumentId</tt></p></div></dd></dl></div><p></p></div><div class="section" lang="en"><div class="titlepage"><div><div><h3 class="title"><a name="d0e3847"></a>5.4.2.&nbsp;Custom Bridge</h3></div></div><div></div></div><p>It can happen that the built-in bridges of Hibernate Search does
+      not cover some of your property types, or that the String representation
+      used is not what you expect.</p><div class="section" lang="en"><div class="titlepage"><div><div><h4 class="title"><a name="d0e3852"></a>5.4.2.1.&nbsp;StringBridge</h4></div></div><div></div></div><p>The simpliest custom solution is to give <span class="productname">Hibernate
+        Search</span>&#8482; an implementation of your expected
+        <span class="emphasis"><em>object to String</em></span> bridge. To do so you need to
+        implements the
+        <tt class="literal">org.hibernate.search.bridge.StringBridge</tt>
+        interface</p><pre class="programlisting">/**
+ * Padding Integer bridge.
+ * All numbers will be padded with 0 to match 5 digits
+ *
+ * @author Emmanuel Bernard
+ */
+public class PaddedIntegerBridge implements <span class="bold"><b>StringBridge</b></span> {
+
+    private int PADDING = 5;
+
+    <span class="bold"><b>public String objectToString(Object object)</b></span> {
+        String rawInteger = ( (Integer) object ).toString();
+        if (rawInteger.length() &gt; PADDING) throw new IllegalArgumentException( "Try to pad on a number too big" );
+        StringBuilder paddedInteger = new StringBuilder( );
+        for ( int padIndex = rawInteger.length() ; padIndex &lt; PADDING ; padIndex++ ) {
+            paddedInteger.append('0');
+        }
+        return paddedInteger.append( rawInteger ).toString();
+    }
+}</pre><p>Then any property or field can use this bridge thanks to the
+        <tt class="literal">@FieldBridge</tt> annotation</p><pre class="programlisting"><span class="bold"><b>@FieldBridge(impl = PaddedIntegerBridge.class)</b></span>
+private Integer length;</pre><p>Parameters can be passed to the Bridge implementation making it
+        more flexible. The Bridge implementation implements a
+        <tt class="classname">ParameterizedBridge</tt> interface, and the
+        parameters are passed through the <tt class="literal">@FieldBridge</tt>
+        annotation.</p><pre class="programlisting">public class PaddedIntegerBridge implements StringBridge, <span class="bold"><b>ParameterizedBridge</b></span> {
+
+    public static String PADDING_PROPERTY = "padding";
+    private int padding = 5; //default
+
+    <span class="bold"><b>public void setParameterValues(Map parameters)</b></span> {
+        Object padding = parameters.get( PADDING_PROPERTY );
+        if (padding != null) this.padding = (Integer) padding;
+    }
+
+    public String objectToString(Object object) {
+        String rawInteger = ( (Integer) object ).toString();
+        if (rawInteger.length() &gt; padding) throw new IllegalArgumentException( "Try to pad on a number too big" );
+        StringBuilder paddedInteger = new StringBuilder( );
+        for ( int padIndex = rawInteger.length() ; padIndex &lt; padding ; padIndex++ ) {
+            paddedInteger.append('0');
+        }
+        return paddedInteger.append( rawInteger ).toString();
+    }
+}
+
+
+//property
+@FieldBridge(impl = PaddedIntegerBridge.class, 
+        <span class="bold"><b>params = @Parameter(name="padding", value="10")</b></span> )
+private Integer length;</pre><p>The <tt class="classname">ParameterizedBridge</tt> interface can be
+        implemented by <tt class="classname">StringBridge</tt>,
+        <tt class="classname">TwoWayStringBridge</tt>,
+        <tt class="classname">FieldBridge</tt> implementations (see
+        bellow).</p><p>If you expect to use your bridge implementation on for an id
+        property (ie annotated with <tt class="literal">@DocumentId</tt>), you need
+        to use a slightly extended version of <tt class="literal">StringBridge</tt>
+        named <tt class="classname">TwoWayStringBridge</tt>. <tt class="literal">Hibernate
+        Search</tt> needs to read the string representation of the
+        identifier and generate the object out of it. There is not difference
+        in the way the <tt class="literal">@FieldBridge</tt> annotation is
+        used.</p><pre class="programlisting">public class PaddedIntegerBridge implements TwoWayStringBridge, ParameterizedBridge {
+
+    public static String PADDING_PROPERTY = "padding";
+    private int padding = 5; //default
+
+    public void setParameterValues(Map parameters) {
+        Object padding = parameters.get( PADDING_PROPERTY );
+        if (padding != null) this.padding = (Integer) padding;
+    }
+
+    public String objectToString(Object object) {
+        String rawInteger = ( (Integer) object ).toString();
+        if (rawInteger.length() &gt; padding) throw new IllegalArgumentException( "Try to pad on a number too big" );
+        StringBuilder paddedInteger = new StringBuilder( );
+        for ( int padIndex = rawInteger.length() ; padIndex &lt; padding ; padIndex++ ) {
+            paddedInteger.append('0');
+        }
+        return paddedInteger.append( rawInteger ).toString();
+    }
+
+    <span class="bold"><b>public Object stringToObject(String stringValue)</b></span> {
+        return new Integer(stringValue);
+    }
+}
+
+
+//id property
+@DocumentId
+@FieldBridge(impl = PaddedIntegerBridge.class,
+            params = @Parameter(name="padding", value="10") )
+private Integer id;</pre><p>It is critically important for the two-way process to be
+        idempotent (ie object = stringToObject( objectToString( object ) )
+        ).</p></div><div class="section" lang="en"><div class="titlepage"><div><div><h4 class="title"><a name="d0e3940"></a>5.4.2.2.&nbsp;FieldBridge</h4></div></div><div></div></div><p>Some usecase requires more than a simple object to string
+        translation when mapping a property to a Lucene index. To give you
+        most of the flexibility you can also implement a bridge as a
+        <tt class="classname">FieldBridge</tt>. This interface give you a property
+        value and let you map it the way you want in your Lucene
+        <tt class="classname">Document</tt>.This interface is very similar in its
+        concept to the <span class="productname">Hibernate</span>&#8482;
+        <tt class="classname">UserType</tt>.</p><p>You can for example store a given property in two different
+        document fields</p><pre class="programlisting">/**
+ * Store the date in 3 different field year, month, day
+ * to ease Range Query per year, month or day
+ * (eg get all the elements of december for the last 5 years)
+ *
+ * @author Emmanuel Bernard
+ */
+public class DateSplitBridge implements FieldBridge {
+    private final static TimeZone GMT = TimeZone.getTimeZone("GMT");
+
+    <span class="bold"><b>public void set(String name, Object value, Document document, Field.Store store, Field.Index index, Float boost) {</b></span>
+        Date date = (Date) value;
+        Calendar cal = GregorianCalendar.getInstance( GMT );
+        cal.setTime( date );
+        int year = cal.get( Calendar.YEAR );
+        int month = cal.get( Calendar.MONTH ) + 1;
+        int day = cal.get( Calendar.DAY_OF_MONTH );
+        //set year
+        Field field = new Field( name + ".year", String.valueOf(year), store, index );
+        if ( boost != null ) field.setBoost( boost );
+        document.add( field );
+        //set month and pad it if needed
+        field = new Field( name + ".month", month &lt; 10 ? "0" : "" + String.valueOf(month), store, index );
+        if ( boost != null ) field.setBoost( boost );
+        document.add( field );
+        //set day and pad it if needed
+        field = new Field( name + ".day", day &lt; 10 ? "0" : "" + String.valueOf(day), store, index );
+        if ( boost != null ) field.setBoost( boost );
+        document.add( field );
+    }
+}
+
+
+//property
+<span class="bold"><b>@FieldBridge(impl = DateSplitBridge.class)</b></span>
+private Integer length;</pre><p></p></div></div></div><div class="section" lang="en"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="lucene-query"></a>5.5.&nbsp;Querying</h2></div></div><div></div></div><p>The second most important capability of <span class="productname">Hibernate
+    Search</span>&#8482; is the ability to execute a Lucene query and retrieve
+    entities managed by an Hibernate session, providing the power of Lucene
+    without living the Hibernate paradygm, and giving another dimension to the
+    Hibernate classic search mechanisms (HQL, Criteria query, native SQL
+    query).</p><p>To access the <span class="productname">Hibernate Search</span>&#8482; querying
+    facilities, you have to use an Hibernate
+    <tt class="classname">FullTextSession</tt>. A SearchSession wrap an regular
+    <tt class="classname">org.hibernate.Session</tt> to provide query and indexing
+    capabilities.</p><pre class="programlisting">Session session = sessionFactory.openSession();
+...
+FullTextSession fullTextSession = Search.createFullTextSession(session);</pre><p>The search facility is built on native Lucene queries.</p><pre class="programlisting">org.apache.lucene.QueryParser parser = new QueryParser("title", new StopAnalyzer() );
+
+org.hibernate.lucene.search.Query luceneQuery = parser.parse( "summary:Festina Or brand:Seiko" );
+<span class="bold"><b>org.hibernate.Query fullTextQuery = fullTextSession.createFullTextQuery( luceneQuery );</b></span>
+
+List result = fullTextQuery.list(); //return a list of managed objects</pre><p>The Hibernate query built on top of the Lucene query is a regular
+    <tt class="literal">org.hibernate.Query</tt>, you are is the same paradygm as
+    the other Hibernate query facilities (HQL, Native or Criteria). The
+    regular <tt class="literal">list()</tt>, <tt class="literal">uniqueResult()</tt>,
+    <tt class="literal">iterate()</tt> and <tt class="literal">scroll()</tt> can be
+    used.</p><p>If you expect a reasonnable result number and expect to work on all
+    of them, <tt class="methodname">list()</tt> or
+    <tt class="methodname">uniqueResult()</tt> are recommanded.
+    <tt class="methodname">list()</tt> work best if the entity
+    <tt class="literal">batch-size</tt> is set up properly. Note that Hibernate
+    Seach has to process all Lucene Hits elements when using
+    <tt class="methodname">list()</tt>, <tt class="methodname">uniqueResult()</tt>
+    and <tt class="methodname">iterate()</tt>. If you wish to minimize Lucene
+    document loading, <tt class="methodname">scroll()</tt> is more appropriate,
+    Don't forget to close the <tt class="classname">ScrollableResults</tt> object
+    when you're done, since it keeps Lucene resources.</p><p>An efficient way to work with queries is to use pagination. The
+    pagination API is exactly the one available in
+    <tt class="classname">org.hibernate.Query</tt>:</p><pre class="programlisting"><span class="bold"><b>org.hibernate.Query fullTextQuery = fullTextSession.createFullTextQuery( luceneQuery );</b></span>
+fullTextQuery.setFirstResult(30);
+fullTextQuery.setMaxResult(20);
+fullTextQuery.list(); //will return a list of 20 elements starting from the 30th</pre><p>Only the relevant Lucene Documents are accessed.</p></div><div class="section" lang="en"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="lucene-index"></a>5.6.&nbsp;Indexing</h2></div></div><div></div></div><p>It is sometimes useful to index an object event if this object is
+    not inserted nor updated to the database. This is especially true when you
+    want to build your index the first time. You can achieve that goal using
+    the <tt class="classname">FullTextSession</tt>.</p><pre class="programlisting">FullTextSession fullTextSession = Search.createFullTextSession(session);
+Transaction tx = fullTextSession.beginTransaction();
+for (Customer customer : customers) {
+    <span class="bold"><b>fullTextSession.index(customer);</b></span>
+}
+tx.commit(); //index are written at commit time</pre><p>For maximum efficiency, Hibernate Search batch index operations
+    which and execute them at commit time (Note: you don't need to use
+    <tt class="classname">org.hibernate.Transaction</tt> in a JTA
+    environment).</p></div><div class="footnotes"><br><hr width="100" align="left"><div class="footnote"><p><sup>[<a name="ftn.d0e3811" href="#d0e3811">1</a>] </sup>Using a Range query is debattable and has drawbacks, an
+                alternative approach is to use a Filter query which will
+                filter the result query to the appropriate range.</p><p><span class="productname">Hibernate Search</span>&#8482; will support
+                a padding mechanism</p></div></div></div><div class="navfooter"><hr><table width="100%" summary="Navigation footer"><tr><td width="40%" align="left"><a accesskey="p" href="validator.html">Prev</a>&nbsp;</td><td width="20%" align="center"><a accesskey="u" href="index.html">Up</a></td><td width="40%" align="right">&nbsp;</td></tr><tr><td width="40%" align="left" valign="top">Chapter&nbsp;4.&nbsp;Hibernate Validator&nbsp;</td><td width="20%" align="center"><a accesskey="h" href="index.html">Home</a></td><td width="40%" align="right" valign="top">&nbsp;</td></tr></table></div></body></html>
